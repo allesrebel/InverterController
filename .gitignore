@@ -1,0 +1,10 @@
+.ccsproject
+.cproject
+.project
+.settings/*
+Debug/*
+lnk_msp430g2553.cmd
+msp432p401r.cmd
+targetConfigs/*
+.launches/*
+.gitattributes
