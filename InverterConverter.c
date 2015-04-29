@@ -79,8 +79,8 @@ uint32_t pwm_freq_index = 0;
 /*
  * Variables needed for Boost Converter
  */
-static uint32_t target_val = 0;	// ADC value that needs to be manually calibrated for the application
-static uint32_t dead_time = 2;	// Deadtime in ticks
+#define target_val 255	// ADC value that needs to be manually calibrated for the application
+uint32_t dead_time = 4;	// Deadtime in ticks
 volatile uint32_t adc_val = 0;
 volatile uint32_t edge_tick = 0; // Represents the edge of the possible duty cycle space
 
@@ -285,17 +285,17 @@ void setup_TimerA2(uint32_t ticks){
 	TA2CCTL2 = OUTMOD_2;	// CCR2 reset/set
 
 	// Set Up Pins to Output PWM Signals
-	// P10.5 outputs TA3.1
-	P10DIR |= BIT5;
-	P10SEL0 |= BIT5;
-	P10SEL1 &= ~BIT5;
+	// P5.6 outputs TA2.1
+	P5DIR |= BIT6;
+	P5SEL0 |= BIT6;
+	P5SEL1 &= ~BIT6;
 
-	// P8.2 outputs TA3.2
-	P8DIR |= BIT2;
-	P8SEL0 |= BIT2;
-	P8SEL1 &= ~BIT2;
+	// P5.7 outputs TA2.2
+	P5DIR |= BIT7;
+	P5SEL0 |= BIT7;
+	P5SEL1 &= ~BIT7;
 
-	TA2CTL = TASSEL__SMCLK + MC__UPDOWN;
+	TA2CTL = TASSEL__SMCLK + MC__UPDOWN + TACLR;
 }
 
 /*
