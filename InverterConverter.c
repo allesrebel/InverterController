@@ -13,7 +13,7 @@
  *	Version  : .0001
  *
  *	Under Dev: 4/29/15
- *	TODO: Add Feedback Logic
+ *	TODO: Add Feedback Logic + set target Val
  *
  */
 #include <msp.h>
@@ -84,6 +84,10 @@ static uint32_t dead_time = 2;	// Deadtime in ticks
 volatile uint32_t adc_val = 0;
 volatile uint32_t edge_tick = 0; // Represents the edge of the possible duty cycle space
 
+/*
+ * Boost Converter PI Controller Implementation
+ */
+uint32_t PortionalFactor();
 
 // !TODO: Remove this definition once the header file is updated this def.
 #define CS_KEY 0x695A
@@ -122,6 +126,55 @@ int main(void) {
 	ADC14CTL0 |= ADC14ENC | ADC14SC;        // Start conversion-software trigger
 
 	while(1);
+}
+
+/*
+ * 	Portional Controller - returns Ticks of duty cycle based on difference
+ * 	Assumes that target is in the Top Half of the possible values read
+ * 	on ADC.
+ */
+uint32_t PortionalFactor(){
+	if(target_val > adc_val){
+		// Get Proportional Term
+		uint32_t diff = target_val - adc_val;
+		double portional = (double)diff/target_val;
+
+		// Calcuation Portional Change from max possible change in duty cycle
+		uint32_t ticksDelta = portional*(edge_tick);
+
+		// Rise Duty Cycle to increase ADC Val
+		// TODO: Make more Robust edge case detection
+		if (TA2CCR1 + ticksDelta >= edge_tick){
+			ticksDelta = 0;
+			TA2CCR1 = edge_tick-1;
+			TA2CCR2 = edge_tick-1-dead_time;
+		}
+		else{
+			TA2CCR1 += ticksDelta;
+			TA2CCR2 += ticksDelta;
+		}
+
+	}
+	else{
+		// Get Proportional Term
+		uint32_t diff = adc_val - target_val;
+		double portional = (double)diff/target_val;
+
+		// Calcuation Portional Change from max possible change in duty cycle
+		uint32_t ticksDelta = portional*(edge_tick);
+
+		// Lower Duty Cycle to decrease ADC Val
+		// TODO: Make more Robust edge case detection
+		if (TA2CCR2 - ticksDelta >= edge_tick){
+			//under flow occured... set to lowest possible value
+			TA2CCR2 = 1;
+			TA2CCR1 = 1+dead_time;
+		}
+		else{
+			TA2CCR2 -= ticksDelta;
+			TA2CCR1 -= ticksDelta;
+		}
+	}
 }
 
 void setup_internalRef(){
