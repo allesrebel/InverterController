@@ -56,6 +56,7 @@ extern unsigned long __STACK_END;
 extern void TimerA1_ISR();
 extern void Port1_ISR();
 extern void Port2_ISR();
+extern void ADC14_ISR();
 /* To be added by user */
 
 
@@ -106,7 +107,7 @@ void (* const interruptVectors[])(void) =
     defaultISR,                             /* EUSCIB1 ISR               */
     defaultISR,                             /* EUSCIB2 ISR               */
     defaultISR,                             /* EUSCIB3 ISR               */
-    defaultISR,                             /* ADC14 ISR                 */
+    ADC14_ISR,                             /* ADC14 ISR                 */
     defaultISR,                             /* T32_INT1 ISR              */
     defaultISR,                             /* T32_INT2 ISR              */
     defaultISR,                             /* T32_INTC ISR              */

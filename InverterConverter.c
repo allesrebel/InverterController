@@ -21,6 +21,8 @@ void charge_caps();
 void setup_clock();
 void setup_Port1();
 void setup_Port2();
+void setup_internalRef();
+void setup_ADC14();
 void setup_TimerA0(uint32_t);
 void setup_TimerA1(uint32_t);
 void init_sineLUT(uint32_t);
@@ -46,6 +48,7 @@ void error();
 void TimerA1_ISR();
 void Port1_ISR();
 void Port2_ISR();
+void ADC14_ISR();
 
 /*
  * Variables/Globals needed for pwm sine wave
@@ -62,6 +65,13 @@ uint32_t sine_lut[sine_chunks];
 #define pwm_freq_count 4
 uint32_t pwm_freq_modes[pwm_freq_count] = {100000, 150000, 200000, 250000};
 uint32_t pwm_freq_index = 0;
+
+/*
+ * Variables needed for Boost Converter
+ */
+static uint32_t target_val = 0;
+volatile uint32_t adc_val = 0;
+
 
 // !TODO: Remove this definition once the header file is updated this def.
 #define CS_KEY 0x695A
@@ -85,6 +95,8 @@ int main(void) {
 	setup_clock();
 	setup_Port1();
 	setup_Port2();
+	setup_internalRef();
+	setup_ADC14();
 
 	charge_caps();	// initialize the circuit caps
 
@@ -93,7 +105,36 @@ int main(void) {
 
 	__enable_interrupts();	//Enable Global Interrupts
 
+	//Start Conversions For Boost
+	ADC14CTL0 |= ADC14ENC | ADC14SC;        // Start conversion-software trigger
+
 	while(1);
+}
+
+void setup_internalRef(){
+	// Configure internal reference
+	while(REFCTL0 & REFGENBUSY);            // If ref generator busy, WAIT
+	REFCTL0 |= REFVSEL_3 |REFON;            // Select internal ref = 2.5V
+											// Internal Reference ON
+	__delay_cycles(3600);	// Delay for Initializing the Internal Reference
+}
+
+void setup_ADC14(){
+	ADC14CTL0 &= ~(ADC14ENC);	// Allow configuration fo the ADC14 Module
+	//			Use Sysclk , Repeated single ch conv,  signal from sample timer
+	ADC14CTL0 = ADC14SSEL__SYSCLK |	ADC14CONSEQ_3 | ADC14SHP | ADC14MSC | ADC14ON ;
+	ADC14CTL1 = ADC14RES__8BIT;
+
+	// Set up INPUT channel source for ADC14MEM
+	ADC14MCTL0 = ADC14INCH_0;
+
+	// Set up A0 Pin on Board
+	P5SEL0 |= BIT5;
+	P5SEL1 |= BIT5;
+
+	// Set up Interrupt for Conversion Success
+	NVIC_ISER0 = 1 << ((INT_ADC14 - 16) & 31);// Enable ADC interrupt in NVIC module
+	ADC14IER0 = ADC14IE0;                     // Enable ADC14IFG.0
 }
 
 void setup_Port2(){
@@ -269,6 +310,12 @@ void charge_caps(){
 	P4OUT = 0x0F;	// Charge 2, 3 ,1, 0
 	__delay_cycles(2800000);	//~6ms delay
 	P4OUT = 0x00;
+}
+
+void ADC14_ISR(){
+	// Upon Successful Conversion, this ISR is fired.
+	uint32_t val = ADC14MEM0;
+	__nop();
 }
 
 void TimerA1_ISR(){
