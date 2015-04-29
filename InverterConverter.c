@@ -87,7 +87,7 @@ volatile uint32_t edge_tick = 0; // Represents the edge of the possible duty cyc
 /*
  * Boost Converter PI Controller Implementation
  */
-uint32_t PortionalFactor();
+void PortionalFactor();
 
 // !TODO: Remove this definition once the header file is updated this def.
 #define CS_KEY 0x695A
@@ -133,7 +133,7 @@ int main(void) {
  * 	Assumes that target is in the Top Half of the possible values read
  * 	on ADC.
  */
-uint32_t PortionalFactor(){
+void PortionalFactor(){
 	if(target_val > adc_val){
 		// Get Proportional Term
 		uint32_t diff = target_val - adc_val;
@@ -407,7 +407,7 @@ void charge_caps(){
 void ADC14_ISR(){
 	// Upon Successful Conversion, this ISR is fired.
 	adc_val = ADC14MEM0;
-	__nop();	// TODO: Add Feedback Here...
+	PortionalFactor();	// Perform the Portional factor of the feedback control
 }
 
 void TimerA1_ISR(){
