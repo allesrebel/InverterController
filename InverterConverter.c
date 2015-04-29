@@ -1,10 +1,19 @@
 /*
- * main.c - Sinewave generator using PWM
- * Uses's the MSP430's timer subsystem to generate a sine wave
- * utilizing PWM.
+ * Inverter Converter.c - Controller Logic for both
+ * Boost and Inverter Stages.
+ *
+ * Uses's the MSP432's timer hardware to generate a
+ * sine waveform utilizing PWM. As well as a syncronous
+ * pwm control signals for the boost converter. ADC14 is
+ * utilized to get feedback from the boostconverter output
+ * and a simple PI controller is implemented to correct pwm
+ * duty cycle of the boost converter switches.
  *
  * Written By: Rebel & Vats
- *	Version  : 2
+ *	Version  : .0001
+ *
+ *	Under Dev: 4/29/15
+ *	TODO: Add Feedback Logic
  *
  */
 #include <msp.h>
@@ -25,6 +34,7 @@ void setup_internalRef();
 void setup_ADC14();
 void setup_TimerA0(uint32_t);
 void setup_TimerA1(uint32_t);
+void setup_TimerA2(uint32_t);
 void init_sineLUT(uint32_t);
 
 /*
@@ -69,8 +79,10 @@ uint32_t pwm_freq_index = 0;
 /*
  * Variables needed for Boost Converter
  */
-static uint32_t target_val = 0;
+static uint32_t target_val = 0;	// ADC value that needs to be manually calibrated for the application
+static uint32_t dead_time = 2;	// Deadtime in ticks
 volatile uint32_t adc_val = 0;
+volatile uint32_t edge_tick = 0; // Represents the edge of the possible duty cycle space
 
 
 // !TODO: Remove this definition once the header file is updated this def.
@@ -100,8 +112,9 @@ int main(void) {
 
 	charge_caps();	// initialize the circuit caps
 
-	setup_TimerA0(ticks_carrier);
-	setup_TimerA1(ticks_mod);
+	setup_TimerA0(ticks_carrier);	// PWM @ carrier freq
+	setup_TimerA1(ticks_mod);		// Sine Modulation
+	setup_TimerA2(ticks_carrier);	// Sync PWM @ carrier freq
 
 	__enable_interrupts();	//Enable Global Interrupts
 
@@ -123,7 +136,7 @@ void setup_ADC14(){
 	ADC14CTL0 &= ~(ADC14ENC);	// Allow configuration fo the ADC14 Module
 	//			Use Sysclk , Repeated single ch conv,  signal from sample timer
 	ADC14CTL0 = ADC14SSEL__SYSCLK |	ADC14CONSEQ_3 | ADC14SHP | ADC14MSC | ADC14ON ;
-	ADC14CTL1 = ADC14RES__8BIT;
+	ADC14CTL1 = ADC14RES__10BIT;	// Mod to get speed required!
 
 	// Set up INPUT channel source for ADC14MEM
 	ADC14MCTL0 = ADC14INCH_0;
@@ -204,6 +217,32 @@ void setup_TimerA1(uint32_t ticks){
 
 	//	Start the timer! + enable interrupts
 	TA1CTL = TASSEL__SMCLK + MC__UP + ID__8 + TAIE;
+}
+
+void setup_TimerA2(uint32_t ticks){
+	// Utilize the ticks value given to get 1/2 period of the PWM signal
+	TA2CCR0 = edge_tick = ticks/2;	// PWM Period
+
+	// Initially set duty cycle to close to 50% as possible
+	TA2CCR2 = edge_tick/2;
+	TA2CCR1 = edge_tick/2 + dead_time;
+
+	// Set up Syncrous PWM signals
+	TA2CCTL1 = OUTMOD_6;	// CCR1 reset/set
+	TA2CCTL2 = OUTMOD_2;	// CCR2 reset/set
+
+	// Set Up Pins to Output PWM Signals
+	// P10.5 outputs TA3.1
+	P10DIR |= BIT5;
+	P10SEL0 |= BIT5;
+	P10SEL1 &= ~BIT5;
+
+	// P8.2 outputs TA3.2
+	P8DIR |= BIT2;
+	P8SEL0 |= BIT2;
+	P8SEL1 &= ~BIT2;
+
+	TA2CTL = TASSEL__SMCLK + MC__UPDOWN;
 }
 
 /*
@@ -314,8 +353,8 @@ void charge_caps(){
 
 void ADC14_ISR(){
 	// Upon Successful Conversion, this ISR is fired.
-	uint32_t val = ADC14MEM0;
-	__nop();
+	adc_val = ADC14MEM0;
+	__nop();	// TODO: Add Feedback Here...
 }
 
 void TimerA1_ISR(){
