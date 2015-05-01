@@ -66,6 +66,7 @@ void ADC14_ISR();
 #define m_freq 48000000	// Mclk speed
 #define PI 3.14159265
 #define sine_chunks 500	// 100 - 1000 chunks is doable
+#define dead_time_switching 3
 uint32_t sine_timestep = 0;
 uint32_t sine_toggle = 0;
 uint32_t sine_lut_index = 0;
@@ -79,7 +80,7 @@ uint32_t pwm_freq_index = 0;
 /*
  * Variables needed for Boost Converter
  */
-#define target_val 255	// ADC value that needs to be manually calibrated for the application
+#define target_val 1003	// ADC value that needs to be manually calibrated for the application
 uint32_t dead_time = 4;	// Deadtime in ticks
 volatile uint32_t adc_val = 0;
 volatile uint32_t edge_tick = 0; // Represents the edge of the possible duty cycle space
@@ -456,6 +457,10 @@ void Port1_ISR(){
 
 void Port2_ISR(){
 	P2IFG &= ~BIT3; // Clear IFG
+
+	//Dead Time Between Switches in States
+	P4OUT = 0x00;	// Turn off all Switches
+	__delay_cycles(dead_time_switching);
 
 	if(P2IES & BIT3){
 		// HIGH - > LOW transition
