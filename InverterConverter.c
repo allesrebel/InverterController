@@ -13,7 +13,6 @@
  *	Version  : .0001
  *
  *	Under Dev: 4/29/15
- *	TODO: Add Feedback Logic + set target Val
  *
  */
 #include <msp.h>
@@ -30,6 +29,7 @@ void charge_caps();
 void setup_clock();
 void setup_Port1();
 void setup_Port2();
+void setup_Port4();
 void setup_internalRef();
 void setup_ADC14();
 void setup_TimerA0(uint32_t);
@@ -39,8 +39,9 @@ void init_sineLUT(uint32_t);
 
 /*
  * Note: On PORT4 the following is the switch order
- * 1 0
- * 3 2
+ * 1   0
+ *   L
+ * 3   2
  * Where the load would be in the middle
  * 1 & 0 are high
  * 3 and 2 are grounded
@@ -112,6 +113,7 @@ int main(void) {
 	setup_clock();
 	setup_Port1();
 	setup_Port2();
+	setup_Port4();
 	setup_internalRef();
 	setup_ADC14();
 
@@ -204,11 +206,14 @@ void setup_ADC14(){
 	ADC14IER0 = ADC14IE0;                     // Enable ADC14IFG.0
 }
 
-void setup_Port2(){
+void setup_Port4(){
+	//	Signals on port 4 are used for Inverter
 	// Output Signals + initialize to low
 	P4DIR |= BIT0 + BIT1 + BIT2 + BIT3;
 	P4OUT &= ~(BIT0 + BIT1 + BIT2 + BIT3);
+}
 
+void setup_Port2(){
 	// Initialize Input Signal
     P2DIR &= ~BIT3;
     P2IES |= BIT3;
@@ -369,15 +374,15 @@ void setup_clock() {
 		error();                            // Error if device is not in AM1_LDO mode
 
 	/* Step 2: Configure Flash wait-state to 2 for both banks 0 & 1 */
-	FLCTL_BANK0_RDCTL = FLCTL_BANK0_RDCTL & ~FLCTL_BANK0_RDCTL_WAIT_M | FLCTL_BANK0_RDCTL_WAIT_2;
-	FLCTL_BANK1_RDCTL = FLCTL_BANK0_RDCTL & ~FLCTL_BANK1_RDCTL_WAIT_M | FLCTL_BANK1_RDCTL_WAIT_2;
+	FLCTL_BANK0_RDCTL = (FLCTL_BANK0_RDCTL & ~FLCTL_BANK0_RDCTL_WAIT_M) | FLCTL_BANK0_RDCTL_WAIT_2;
+	FLCTL_BANK1_RDCTL = (FLCTL_BANK0_RDCTL & ~FLCTL_BANK1_RDCTL_WAIT_M) | FLCTL_BANK1_RDCTL_WAIT_2;
 
 	/* Step 3: Configure DCO to 48MHz, ensure MCLK uses DCO as source*/
 	CSKEY = CS_KEY;                        // Unlock CS module for register access
 	CSCTL0 = 0;                            // Reset tuning parameters
 	CSCTL0 = DCORSEL_5;                    // Set DCO to 48MHz
 	/* Select MCLK = DCO, no divider */
-	CSCTL1 = CSCTL1 & ~(SELM_M | DIVM_M) | SELM_3;
+	CSCTL1 = (CSCTL1 & ~(SELM_M | DIVM_M)) | SELM_3;
 	CSKEY = 0;                             // Lock CS module from unintended accesses
 
     /* Step 4: Output MCLK to port pin to demonstrate 48MHz operation */
@@ -412,9 +417,6 @@ void ADC14_ISR(){
 }
 
 void TimerA1_ISR(){
-	//Clear the Interrupt Flag via Accessing
-	TA1IV;
-
 	//Set Duty Cycle of the Sine wave on Timer A0
 	TA0CCR1 = sine_lut[sine_lut_index++];
 
