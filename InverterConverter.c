@@ -417,6 +417,9 @@ void ADC14_ISR(){
 }
 
 void TimerA1_ISR(){
+	// Clear the interrupt Flag
+	TA1IV = 0;
+
 	//Set Duty Cycle of the Sine wave on Timer A0
 	TA0CCR1 = sine_lut[sine_lut_index++];
 
