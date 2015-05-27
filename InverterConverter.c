@@ -39,12 +39,12 @@ void init_sineLUT(uint32_t);
 
 /*
  * Note: On PORT4 the following is the switch order
- * 1   0
+ * 0   1
  *   L
- * 3   2
+ * 4   5
  * Where the load would be in the middle
  * 1 & 0 are high
- * 3 and 2 are grounded
+ * 4 and 5 are grounded
  */
 
 /*
@@ -460,23 +460,63 @@ void Port1_ISR(){
 
 }
 
+/*
+ * Control Logic for the H-Bridge Switches
+ */
 void Port2_ISR(){
 	P2IFG &= ~BIT3; // Clear IFG
 
-	//Dead Time Between Switches in States
-	P4OUT = 0x00;	// Turn off all Switches
-	__delay_cycles(dead_time_switching);
+	if(P1OUT & BIT0) {
+		// Negative State
 
-	if(P2IES & BIT3){
-		// HIGH - > LOW transition
-		P4OUT = 0x0C;	// Grounded Load
+		if(P2IES & BIT3){
+			// HIGH - > LOW transition
+
+			//	Deadtime State from 3 -> 4
+			P4OUT = 0x10;
+			__delay_cycles(dead_time_switching);
+
+			//	State 4 - Grounded Load
+			P4OUT = 0x30;
+
+		}
+		else{
+			// LOW -> HIGH Transition
+
+			//	Deadtime State from 4 -> 3
+			P4OUT = 0x10;
+			__delay_cycles(dead_time_switching);
+
+			//	State 3 - Grounded Load
+			P4OUT = 0x12;
+
+		}
+
 	}
 	else{
-		// LOW -> HIGH Transition
-		if(P1OUT & BIT0) // if Negative signal is present do Negative Load
-			P4OUT = 0x09;	// Negative Load
-		else // do postiveLoad
-			P4OUT = 0x06;	//	Postive Load
+		// Positive State
+
+		if(P2IES & BIT3){
+			// HIGH - > LOW transition
+
+			//	Deadtime State from 1 -> 2
+			P4OUT = 0x01;
+			__delay_cycles(dead_time_switching);
+
+			//	State 2 - Grounded Load
+			P4OUT = 0x03;
+		}
+		else{
+			// LOW -> HIGH Transition
+
+			//	Deadtime State from 2 -> 1
+			P4OUT = 0x01;
+			__delay_cycles(dead_time_switching);
+
+			//	State 1 - Postive Load
+			P4OUT = 0x21;
+		}
+
 	}
 
 	// Toggle for the next edge
@@ -485,10 +525,10 @@ void Port2_ISR(){
 
 /*
  * Note: On PORT4 the following is the switch order
- * 1   0
+ * 0   1
  *   L
- * 3   2
+ * 4   5
  * Where the load would be in the middle
  * 1 & 0 are high
- * 3 and 2 are grounded
+ * 4 and 5 are grounded
  */
