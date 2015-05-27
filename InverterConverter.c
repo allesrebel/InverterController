@@ -14,6 +14,8 @@
  *
  *	Under Dev: 4/29/15
  *
+ *	Note:	Make sure 2.3 and 2.4 are connected!!!
+ *			This allows for proper generation controls signals.
  */
 #include <msp.h>
 #include <math.h>
@@ -67,15 +69,15 @@ void ADC14_ISR();
 #define m_freq 48000000	// Mclk speed
 #define PI 3.14159265
 #define sine_chunks 500	// 100 - 1000 chunks is doable
-#define dead_time_switching 3
+#define dead_time_switching 10
 uint32_t sine_timestep = 0;
 uint32_t sine_toggle = 0;
 uint32_t sine_lut_index = 0;
 uint32_t half_flag = 0;
 uint32_t sine_lut[sine_chunks];
 
-#define pwm_freq_count 4
-uint32_t pwm_freq_modes[pwm_freq_count] = {100000, 150000, 200000, 250000};
+#define pwm_freq_count 5
+uint32_t pwm_freq_modes[pwm_freq_count] = {50000, 100000, 150000, 200000, 250000};
 uint32_t pwm_freq_index = 0;
 
 /*
@@ -85,11 +87,6 @@ uint32_t pwm_freq_index = 0;
 uint32_t dead_time = 4;	// Deadtime in ticks
 volatile uint32_t adc_val = 0;
 volatile uint32_t edge_tick = 0; // Represents the edge of the possible duty cycle space
-
-/*
- * Boost Converter PI Controller Implementation
- */
-void PortionalFactor();
 
 // !TODO: Remove this definition once the header file is updated this def.
 #define CS_KEY 0x695A
@@ -131,55 +128,6 @@ int main(void) {
 	while(1);
 }
 
-/*
- * 	Portional Controller - returns Ticks of duty cycle based on difference
- * 	Assumes that target is in the Top Half of the possible values read
- * 	on ADC.
- */
-void PortionalFactor(){
-	if(target_val > adc_val){
-		// Get Proportional Term
-		uint32_t diff = target_val - adc_val;
-		double portional = (double)diff/target_val;
-
-		// Calcuation Portional Change from max possible change in duty cycle
-		uint32_t ticksDelta = portional*(edge_tick);
-
-		// Rise Duty Cycle to increase ADC Val
-		// TODO: Make more Robust edge case detection
-		if (TA2CCR1 + ticksDelta >= edge_tick){
-			ticksDelta = 0;
-			TA2CCR1 = edge_tick-1;
-			TA2CCR2 = edge_tick-1-dead_time;
-		}
-		else{
-			TA2CCR1 += ticksDelta;
-			TA2CCR2 += ticksDelta;
-		}
-
-	}
-	else{
-		// Get Proportional Term
-		uint32_t diff = adc_val - target_val;
-		double portional = (double)diff/target_val;
-
-		// Calcuation Portional Change from max possible change in duty cycle
-		uint32_t ticksDelta = portional*(edge_tick);
-
-		// Lower Duty Cycle to decrease ADC Val
-		// TODO: Make more Robust edge case detection
-		if (TA2CCR2 - ticksDelta >= edge_tick){
-			//under flow occured... set to lowest possible value
-			TA2CCR2 = 1;
-			TA2CCR1 = 1+dead_time;
-		}
-		else{
-			TA2CCR2 -= ticksDelta;
-			TA2CCR1 -= ticksDelta;
-		}
-	}
-}
-
 void setup_internalRef(){
 	// Configure internal reference
 	while(REFCTL0 & REFGENBUSY);            // If ref generator busy, WAIT
@@ -209,8 +157,8 @@ void setup_ADC14(){
 void setup_Port4(){
 	//	Signals on port 4 are used for Inverter
 	// Output Signals + initialize to low
-	P4DIR |= BIT0 + BIT1 + BIT2 + BIT3;
-	P4OUT &= ~(BIT0 + BIT1 + BIT2 + BIT3);
+	P4DIR |= BIT0 + BIT1 + BIT4 + BIT5;
+	P4OUT &= ~(BIT0 + BIT1 + BIT4 + BIT5);
 }
 
 void setup_Port2(){
@@ -413,7 +361,9 @@ void charge_caps(){
 void ADC14_ISR(){
 	// Upon Successful Conversion, this ISR is fired.
 	adc_val = ADC14MEM0;
-	PortionalFactor();	// Perform the Portional factor of the feedback control
+	/*
+	 * TODO: PUT PID HERE
+	 */
 }
 
 void TimerA1_ISR(){
@@ -460,67 +410,100 @@ void Port1_ISR(){
 
 }
 
+int nextState = 1;
+#define PostiveLoad 	1
+#define PostiveGround 	2
+#define NegativeLoad	3
+#define NegativeGround	4
+
 /*
  * Control Logic for the H-Bridge Switches
  */
 void Port2_ISR(){
-	P2IFG &= ~BIT3; // Clear IFG
-
-	if(P1OUT & BIT0) {
-		// Negative State
-
-		if(P2IES & BIT3){
-			// HIGH - > LOW transition
-
-			//	Deadtime State from 3 -> 4
-			P4OUT = 0x10;
+	//	Deadtime State Transistion?
+	switch(nextState){
+	case PostiveLoad:
+		if(P1OUT & BIT0){
+			//	Negative State transistion
+			P4OUT = 0x20;
 			__delay_cycles(dead_time_switching);
-
-			//	State 4 - Grounded Load
-			P4OUT = 0x30;
-
+			nextState = NegativeGround;
 		}
 		else{
-			// LOW -> HIGH Transition
-
-			//	Deadtime State from 4 -> 3
+			//	Still In Postive State
+			P4OUT = 0x01;
+			__delay_cycles(dead_time_switching);
+			nextState = PostiveGround;
+		}
+		break;
+	case PostiveGround:
+		if(P1OUT & BIT0){
+			//	Transition to Negative State
+			P4OUT = 0x02;
+			__delay_cycles(dead_time_switching);
+			nextState = NegativeLoad;
+		}
+		else{
+			//	Still In Postive State
+			P4OUT = 0x01;
+			__delay_cycles(dead_time_switching);
+			nextState = PostiveLoad;
+		}
+		break;
+	case NegativeLoad:
+		if(P1OUT & BIT0){
+			//	Still Negative
 			P4OUT = 0x10;
 			__delay_cycles(dead_time_switching);
-
-			//	State 3 - Grounded Load
-			P4OUT = 0x12;
-
+			nextState = NegativeGround;
 		}
-
+		else{
+			//	Transition to Postive State
+			P4OUT = 0x02;
+			__delay_cycles(dead_time_switching);
+			nextState = PostiveGround;
+		}
+		break;
+	case NegativeGround:
+		if(P1OUT & BIT0){
+			//	Still Negative State
+			P4OUT = 0x10;
+			__delay_cycles(dead_time_switching);
+			nextState = NegativeLoad;
+		}
+		else{
+			//	Transition to Postive State
+			P4OUT = 0x20;
+			__delay_cycles(dead_time_switching);
+			nextState = PostiveLoad;
+		}
+		break;
 	}
-	else{
-		// Positive State
 
-		if(P2IES & BIT3){
-			// HIGH - > LOW transition
+	//	Transition
+	switch(nextState){
 
-			//	Deadtime State from 1 -> 2
-			P4OUT = 0x01;
-			__delay_cycles(dead_time_switching);
+	case PostiveLoad:
+		P4OUT = 0x21;
+		break;
 
-			//	State 2 - Grounded Load
-			P4OUT = 0x03;
-		}
-		else{
-			// LOW -> HIGH Transition
+	case PostiveGround:
+		P4OUT = 0x03;
+		break;
 
-			//	Deadtime State from 2 -> 1
-			P4OUT = 0x01;
-			__delay_cycles(dead_time_switching);
+	case NegativeLoad:
+		P4OUT = 0x12;
+		break;
 
-			//	State 1 - Postive Load
-			P4OUT = 0x21;
-		}
-
+	case NegativeGround:
+		P4OUT = 0x30;
+		break;
 	}
 
 	// Toggle for the next edge
 	P2IES ^= BIT3;
+
+	P2IFG &= ~BIT3; // Clear IFG
 }
 
 /*
